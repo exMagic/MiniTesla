@@ -29,13 +29,19 @@
 #define SERIAL_BAUD 115200        // [-] Baud rate for built-in Serial (used for the Serial Monitor)
 #define START_FRAME 0xABCD        // [-] Start frme definition for reliable serial communication
 #define TIME_SEND 100             // [ms] Sending time interval
-#define SPEED_MAX_TEST 1000        // [-] Maximum speed for testing
+#define SPEED_MAX_TEST 1000       // [-] Maximum speed for testing
 #define SPEED_STEP 30             // [-] Speed step
 // #define DEBUG_RX                        // [-] Debug received data. Prints all bytes to serial (comment-out to disable)
+
+#include <U8glib.h>
+U8GLIB_SH1106_128X64 u8g(U8G_I2C_OPT_DEV_0|U8G_I2C_OPT_FAST);
 
 #include <SoftwareSerial.h>
 SoftwareSerial HoverSerial(2, 3);  // RX, TX
 unsigned long StartTime = millis();
+
+
+int prinvalue;
 
 // Global variables
 uint8_t idx = 0;         // Index for new data pointer
@@ -91,8 +97,20 @@ void setup() {
   Serial1.begin(HOVER_SERIAL_BAUD);
   pinMode(LED_BUILTIN, OUTPUT);
 
+  if (u8g.getMode() == U8G_MODE_R3G3B2) {
+		u8g.setColorIndex(255);     // white
+	}
+	else if (u8g.getMode() == U8G_MODE_GRAY2BIT) {
+		u8g.setColorIndex(3);         // max intensity
+	}
+	else if (u8g.getMode() == U8G_MODE_BW) {
+		u8g.setColorIndex(1);         // pixel on
+	}
+	else if (u8g.getMode() == U8G_MODE_HICOLOR) {
+		u8g.setHiColorByRGB(255, 255, 255);
+	}
 
-  RunTest();
+  //RunTest();
 }
 
 // ########################## SEND ##########################
@@ -160,6 +178,9 @@ void Receive() {
       Serial.println(Feedback.boardTemp);
       // Serial.print(" 7: ");
       // Serial.println(Feedback.cmdLed);
+
+      prinvalue = Feedback.speedR_meas;
+
     } else {
       Serial.println("Non-valid data skipped");
     }
@@ -175,6 +196,14 @@ void Receive() {
 unsigned long iTimeSend = 0;
 int iTest = 0;
 int iStep = SPEED_STEP;
+
+void draw(void) {
+  // graphic commands to redraw the complete screen should be placed here  
+  u8g.setFont(u8g_font_unifont);
+  u8g.setPrintPos(0, 20); 
+  // call procedure from base class, http://arduino.cc/en/Serial/Print
+  u8g.print(prinvalue);
+}
 
 void loop(void) {
   unsigned long timeNow = millis();
@@ -192,7 +221,7 @@ void loop(void) {
 
   // Calculate test command signal
   iTest += iStep;
-  if (iTest >= SPEED_MAX_TEST){
+  if (iTest >= SPEED_MAX_TEST) {
     iTest = SPEED_MAX_TEST;
   }
 
@@ -202,6 +231,11 @@ void loop(void) {
 
   // Blink the LED
   digitalWrite(LED_BUILTIN, (timeNow % 2000) < 1000);
+
+  u8g.firstPage();  
+  do {
+    draw();
+  } while( u8g.nextPage() );
 }
 
 // ########################## END ##########################

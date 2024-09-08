@@ -1,47 +1,26 @@
-// *******************************************************************
-//  Arduino Nano 5V example code
-//  for   https://github.com/EmanuelFeru/hoverboard-firmware-hack-FOC
-//
-//  Copyright (C) 2019-2020 Emanuel FERU <aerdronix@gmail.com>
-//
-// *******************************************************************
-// INFO:
-// • This sketch uses the the Serial Software interface to communicate and send commands to the hoverboard
-// • The built-in (HW) Serial interface is used for debugging and visualization. In case the debugging is not needed,
-//   it is recommended to use the built-in Serial interface for full speed perfomace.
-// • The data packaging includes a Start Frame, checksum, and re-syncronization capability for reliable communication
-//
-// The code starts with zero speed and moves towards +
-//
-// CONFIGURATION on the hoverboard side in config.h:
-// • Option 1: Serial on Right Sensor cable (short wired cable) - recommended, since the USART3 pins are 5V tolerant.
-//   #define CONTROL_SERIAL_USART3
-//   #define FEEDBACK_SERIAL_USART3
-//   // #define DEBUG_SERIAL_USART3
-// • Option 2: Serial on Left Sensor cable (long wired cable) - use only with 3.3V devices! The USART2 pins are not 5V tolerant!
-//   #define CONTROL_SERIAL_USART2
-//   #define FEEDBACK_SERIAL_USART2
-//   // #define DEBUG_SERIAL_USART2
-// *******************************************************************
-
-// ########################## DEFINES ##########################
 #define HOVER_SERIAL_BAUD 115200  // [-] Baud rate for HoverSerial (used to communicate with the hoverboard)
 #define SERIAL_BAUD 115200        // [-] Baud rate for built-in Serial (used for the Serial Monitor)
 #define START_FRAME 0xABCD        // [-] Start frme definition for reliable serial communication
+#define START_FRAME2 0xABCD       // [-] Start frme definition for reliable serial communication
 #define TIME_SEND 100             // [ms] Sending time interval
 #define SPEED_MAX_TEST 1000       // [-] Maximum speed for testing
 #define SPEED_STEP 30             // [-] Speed step
 // #define DEBUG_RX                        // [-] Debug received data. Prints all bytes to serial (comment-out to disable)
 
 #include <U8glib.h>
-U8GLIB_SH1106_128X64 u8g(U8G_I2C_OPT_DEV_0|U8G_I2C_OPT_FAST);
+U8GLIB_SH1106_128X64 u8g(U8G_I2C_OPT_DEV_0 | U8G_I2C_OPT_FAST);
 
 #include <SoftwareSerial.h>
 SoftwareSerial HoverSerial(2, 3);  // RX, TX
 unsigned long StartTime = millis();
 
 
-int prinvalue;
+int speedR;
+int speedL;
+int speedR2;
+int speedL2;
+int bat;
+int bat2;
 
 // Global variables
 uint8_t idx = 0;         // Index for new data pointer
@@ -49,6 +28,12 @@ uint16_t bufStartFrame;  // Buffer Start Frame
 byte *p;                 // Pointer declaration for the new received data
 byte incomingByte;
 byte incomingBytePrev;
+
+uint8_t idx2 = 0;         // Index for new data pointer
+uint16_t bufStartFrame2;  // Buffer Start Frame
+byte *p2;                 // Pointer declaration for the new received data
+byte incomingByte2;
+byte incomingBytePrev2;
 
 typedef struct {
   uint16_t start;
@@ -73,20 +58,22 @@ SerialFeedback Feedback;
 SerialFeedback NewFeedback;
 
 
-void RunTest() {
-  Send(0, 30);
-  delay(5000);
+
+typedef struct {
+  uint16_t start;
+  int16_t cmd1;
+  int16_t cmd2;
+  int16_t speedR_meas;
+  int16_t speedL_meas;
+  int16_t batVoltage;
+  int16_t boardTemp;
+  uint16_t cmdLed;
+  uint16_t checksum;
+} SerialFeedback2;
+SerialFeedback Feedback2;
+SerialFeedback NewFeedback2;
 
 
-
-
-
-
-  // for (int i = 0; i <= SPEED_MAX_TEST; i++) {
-  //   Send(0, i);
-  //   delay(10);
-  // }
-}
 
 // ########################## SETUP ##########################
 void setup() {
@@ -95,20 +82,18 @@ void setup() {
 
   //HoverSerial.begin(HOVER_SERIAL_BAUD);
   Serial1.begin(HOVER_SERIAL_BAUD);
+  Serial2.begin(HOVER_SERIAL_BAUD);
   pinMode(LED_BUILTIN, OUTPUT);
 
   if (u8g.getMode() == U8G_MODE_R3G3B2) {
-		u8g.setColorIndex(255);     // white
-	}
-	else if (u8g.getMode() == U8G_MODE_GRAY2BIT) {
-		u8g.setColorIndex(3);         // max intensity
-	}
-	else if (u8g.getMode() == U8G_MODE_BW) {
-		u8g.setColorIndex(1);         // pixel on
-	}
-	else if (u8g.getMode() == U8G_MODE_HICOLOR) {
-		u8g.setHiColorByRGB(255, 255, 255);
-	}
+    u8g.setColorIndex(255);  // white
+  } else if (u8g.getMode() == U8G_MODE_GRAY2BIT) {
+    u8g.setColorIndex(3);  // max intensity
+  } else if (u8g.getMode() == U8G_MODE_BW) {
+    u8g.setColorIndex(1);  // pixel on
+  } else if (u8g.getMode() == U8G_MODE_HICOLOR) {
+    u8g.setHiColorByRGB(255, 255, 255);
+  }
 
   //RunTest();
 }
@@ -123,6 +108,7 @@ void Send(int16_t uSteer, int16_t uSpeed) {
 
   // Write to Serial
   Serial1.write((uint8_t *)&Command, sizeof(Command));
+  Serial2.write((uint8_t *)&Command, sizeof(Command));
 }
 
 // ########################## RECEIVE ##########################
@@ -131,9 +117,14 @@ void Receive() {
   if (Serial1.available()) {
     incomingByte = Serial1.read();                                       // Read the incoming byte
     bufStartFrame = ((uint16_t)(incomingByte) << 8) | incomingBytePrev;  // Construct the start frame
-  } else {
-    return;
   }
+
+  if (Serial2.available()) {
+    incomingByte2 = Serial2.read();                                         // Read the incoming byte
+    bufStartFrame2 = ((uint16_t)(incomingByte2) << 8) | incomingBytePrev2;  // Construct the start frame
+  }
+
+
 
 // If DEBUG_RX is defined print all incoming bytes
 #ifdef DEBUG_RX
@@ -152,6 +143,17 @@ void Receive() {
     idx++;
   }
 
+  // Copy received data
+  if (bufStartFrame2 == START_FRAME2) {  // Initialize if new data is detected
+    p2 = (byte *)&NewFeedback2;
+    *p2++ = incomingBytePrev2;
+    *p2++ = incomingByte2;
+    idx2 = 2;
+  } else if (idx2 >= 2 && idx2 < sizeof(SerialFeedback2)) {  // Save the new received data
+    *p2++ = incomingByte2;
+    idx2++;
+  }
+
   // Check if we reached the end of the package
   if (idx == sizeof(SerialFeedback)) {
     uint16_t checksum;
@@ -164,32 +166,79 @@ void Receive() {
       memcpy(&Feedback, &NewFeedback, sizeof(SerialFeedback));
 
       // Print data to built-in Serial
-      Serial.print("cmd1: ");
-      Serial.print(Feedback.cmd1);
-      Serial.print(" cmd2: ");
-      Serial.print(Feedback.cmd2);
+      // Serial.print("cmd1: ");
+      // Serial.print(Feedback.cmd1);
+      // Serial.print(" cmd2: ");
+      // Serial.print(Feedback.cmd2);
       Serial.print(" speedR: ");
       Serial.print(Feedback.speedR_meas);
       Serial.print(" speedL: ");
       Serial.print(Feedback.speedL_meas);
-      Serial.print(" batVoltage: ");
-      Serial.print(Feedback.batVoltage);
-      Serial.print(" boardTemp: ");
-      Serial.println(Feedback.boardTemp);
+      // Serial.print(" batVoltage: ");
+      // Serial.print(Feedback.batVoltage);
+      // Serial.print(" boardTemp: ");
+      // Serial.println(Feedback.boardTemp);
       // Serial.print(" 7: ");
       // Serial.println(Feedback.cmdLed);
+      Serial.println();
 
-      prinvalue = Feedback.speedR_meas;
+      speedR = Feedback.speedR_meas;
+      speedL = Feedback.speedL_meas;
+      bat = Feedback.batVoltage;
 
     } else {
-      Serial.println("Non-valid data skipped");
+      //Serial.println("Non-valid data skipped");
     }
     idx = 0;  // Reset the index (it prevents to enter in this if condition in the next cycle)
   }
 
   // Update previous states
   incomingBytePrev = incomingByte;
+
+
+  // Check if we reached the end of the package
+  if (idx2 == sizeof(SerialFeedback2)) {
+    uint16_t checksum2;
+    checksum2 = (uint16_t)(NewFeedback2.start ^ NewFeedback2.cmd1 ^ NewFeedback2.cmd2 ^ NewFeedback2.speedR_meas ^ NewFeedback2.speedL_meas
+                           ^ NewFeedback2.batVoltage ^ NewFeedback2.boardTemp ^ NewFeedback2.cmdLed);
+
+    // Check validity of the new data
+    if (NewFeedback2.start == START_FRAME2 && checksum2 == NewFeedback2.checksum) {
+      // Copy the new data
+      memcpy(&Feedback2, &NewFeedback2, sizeof(SerialFeedback2));
+
+      // Print data to built-in Serial
+      // Serial.print("cmd1: ");
+      // Serial.print(Feedback.cmd1);
+      // Serial.print(" cmd2: ");
+      // Serial.print(Feedback.cmd2);
+      Serial.print("                                            speedR: ");
+      Serial.print(Feedback2.speedR_meas);
+      Serial.print(" speedL: ");
+      Serial.print(Feedback2.speedL_meas);
+      // Serial.print(" batVoltage: ");
+      // Serial.print(Feedback.batVoltage);
+      // Serial.print(" boardTemp: ");
+      // Serial.println(Feedback.boardTemp);
+      // Serial.print(" 7: ");
+      // Serial.println(Feedback.cmdLed);
+      Serial.println();
+
+      speedR2 = Feedback2.speedR_meas;
+      speedL2 = Feedback2.speedL_meas;
+      bat2 = Feedback2.batVoltage;
+
+    } else {
+      //Serial.println("                                           xx Non-valid data skipped");
+    }
+    idx = 0;  // Reset the index (it prevents to enter in this if condition in the next cycle)
+  }
+
+  // Update previous states
+  incomingBytePrev2 = incomingByte2;
 }
+
+
 
 // ########################## LOOP ##########################
 
@@ -198,11 +247,21 @@ int iTest = 0;
 int iStep = SPEED_STEP;
 
 void draw(void) {
-  // graphic commands to redraw the complete screen should be placed here  
+  // graphic commands to redraw the complete screen should be placed here
   u8g.setFont(u8g_font_unifont);
-  u8g.setPrintPos(0, 20); 
-  // call procedure from base class, http://arduino.cc/en/Serial/Print
-  u8g.print(prinvalue);
+  u8g.setPrintPos(0, 20);
+  u8g.print(speedR);
+  u8g.setPrintPos(30, 20);
+  u8g.print(speedL);
+  u8g.setPrintPos(0, 50);
+  u8g.print(bat);
+
+  u8g.setPrintPos(60, 20);
+  u8g.print(speedR2);
+  u8g.setPrintPos(90, 20);
+  u8g.print(speedL2);
+  u8g.setPrintPos(60, 50);
+  u8g.print(bat2);
 }
 
 void loop(void) {
@@ -217,7 +276,7 @@ void loop(void) {
   if (timeNow - StartTime > 15000) {
     iTest = 0;
   }
-  Send(0, iTest);
+  Send(0, 0);
 
   // Calculate test command signal
   iTest += iStep;
@@ -232,10 +291,10 @@ void loop(void) {
   // Blink the LED
   digitalWrite(LED_BUILTIN, (timeNow % 2000) < 1000);
 
-  u8g.firstPage();  
+  u8g.firstPage();
   do {
     draw();
-  } while( u8g.nextPage() );
+  } while (u8g.nextPage());
 }
 
 // ########################## END ##########################

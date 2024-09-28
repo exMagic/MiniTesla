@@ -14,6 +14,11 @@ U8GLIB_SH1106_128X64 u8g(U8G_I2C_OPT_DEV_0 | U8G_I2C_OPT_FAST);
 SoftwareSerial HoverSerial(2, 3); // RX, TX
 unsigned long StartTime = millis();
 
+#include "AS5600_PsW.h"
+
+AS5600_PsW Sensor;
+
+
 // Set the size of the arrays (increase for more channels)
 #define RC_NUM_CHANNELS 2
 
@@ -24,6 +29,7 @@ unsigned long StartTime = millis();
 // Set up our channel pins - these are the pins that we connect to the receiver
 #define RC_CH1_INPUT 3 // receiver pin 1
 #define RC_CH2_INPUT 2 // receiver pin 2
+
 
 // Set up some arrays to store our pulse starts and widths
 uint16_t RC_VALUES[RC_NUM_CHANNELS];
@@ -92,6 +98,57 @@ typedef struct
 SerialFeedback Feedback2;
 SerialFeedback NewFeedback2;
 
+
+
+// PID constants
+const float Kp = 1.0;
+const float Ki = 0.02;
+const float Kd = 1.0;
+
+// PID variables
+float previousError = 0;
+float integral = 0;
+
+// Function to map Steer to target raw angle
+int mapSteerToAngle(int steer) {
+    // Map Steer from range [-99, 999] to raw angle range [3606, 3795]
+    return map(steer, -99, 99, 3600, 3782);
+}
+
+// PID control function
+void controlMotor(int steer) {
+    int targetAngle = mapSteerToAngle(steer);
+    int currentAngle = Sensor.rawAngle();
+    float error = targetAngle - currentAngle;
+
+    integral += error;
+    float derivative = error - previousError;
+    float output = Kp * error + Ki * integral + Kd * derivative;
+
+    Serial.print(steer);
+    Serial.print(",");
+    Serial.print(targetAngle);
+    Serial.print(", ");
+    Serial.print(currentAngle);
+    Serial.print(", ");
+    Serial.print(error);
+    Serial.print(", ");
+    Serial.println(output);
+
+    Send(output, 0); // Add other parameters as needed
+    
+    previousError = error;
+}
+
+
+
+
+
+
+
+
+
+
 // ########################## SETUP ##########################
 void setup()
 {
@@ -123,6 +180,9 @@ void setup()
   pinMode(RC_CH2_INPUT, INPUT);
   attachInterrupt(digitalPinToInterrupt(RC_CH1_INPUT), READ_RC1, CHANGE);
   attachInterrupt(digitalPinToInterrupt(RC_CH2_INPUT), READ_RC2, CHANGE);
+
+
+  Sensor.init();
 }
 
 // ########################## SEND ##########################
@@ -292,19 +352,22 @@ void draw(void)
 {
   // graphic commands to redraw the complete screen should be placed here
   u8g.setFont(u8g_font_unifont);
-  u8g.setPrintPos(0, 20);
+  u8g.setPrintPos(0, 10);
   u8g.print(speedR);
-  u8g.setPrintPos(30, 20);
+  u8g.setPrintPos(30, 10);
   u8g.print(speedL);
-  u8g.setPrintPos(0, 50);
+  u8g.setPrintPos(0, 30);
   u8g.print(bat);
 
-  u8g.setPrintPos(60, 20);
+  u8g.setPrintPos(60, 10);
   u8g.print(speedR2);
-  u8g.setPrintPos(90, 20);
+  u8g.setPrintPos(90, 10);
   u8g.print(speedL2);
-  u8g.setPrintPos(60, 50);
+  u8g.setPrintPos(60, 30);
   u8g.print(bat2);
+
+    u8g.setPrintPos(60, 60);
+  u8g.print(Sensor.rawAngle());
 }
 
 // Thee functions are called by the interrupts. We send them all to the same place to measure the pulse width
@@ -380,17 +443,19 @@ void loop(void)
 
   // map(value, fromLow, fromHigh, toLow, toHigh)
   Throttle = map(RC_VALUES[0], 1478, 2086, 0, 100);
-  Steer = map(RC_VALUES[1], 1538, 1886, 0, 100);
+  Steer = map(RC_VALUES[1], 1124, 1892, -100, 100);
 
-  Serial.print(RC_VALUES[0]);
-  Serial.print(",");
-  Serial.print(RC_VALUES[1]);
-  Serial.print("   th ");
-  Serial.print(Throttle);
-  Serial.print("  st ");
-  Serial.println(Steer);
+  // Serial.print(RC_VALUES[0]);
+  // Serial.print(",");
+  // Serial.print(RC_VALUES[1]);
+  // Serial.print("   th ");
+  // Serial.print(Throttle);
+  // Serial.print("  st ");
+  // Serial.println(Steer);
 
-  Send(Steer, Throttle);
+  //int Steer = ...; // Get the Steer value from the joystick
+  controlMotor(Steer);
+  //Send(Steer, Throttle);
 }
 
 // ########################## END ##########################

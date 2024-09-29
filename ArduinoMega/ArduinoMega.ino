@@ -101,9 +101,9 @@ SerialFeedback NewFeedback2;
 
 
 // PID constants
-const float Kp = 1.0;
-const float Ki = 0.02;
-const float Kd = 1.0;
+const float Kp = 0.2;
+const float Ki = 0.001;
+const float Kd = 0.2;
 
 // PID variables
 float previousError = 0;
@@ -112,7 +112,7 @@ float integral = 0;
 // Function to map Steer to target raw angle
 int mapSteerToAngle(int steer) {
     // Map Steer from range [-99, 999] to raw angle range [3606, 3795]
-    return map(steer, -99, 99, 3600, 3782);
+    return map(steer, 99, -99, 630, 2700);
 }
 
 // PID control function
@@ -124,7 +124,7 @@ void controlMotor(int steer) {
     integral += error;
     float derivative = error - previousError;
     float output = Kp * error + Ki * integral + Kd * derivative;
-
+    output = output * -1;
     Serial.print(steer);
     Serial.print(",");
     Serial.print(targetAngle);

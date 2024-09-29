@@ -101,9 +101,9 @@ SerialFeedback NewFeedback2;
 
 
 // PID constants
-const float Kp = 0.2;
-const float Ki = 0.001;
-const float Kd = 0.2;
+const float Kp = 0.05;
+const float Ki = 0.0005;
+const float Kd = 0.05;
 
 // PID variables
 float previousError = 0;

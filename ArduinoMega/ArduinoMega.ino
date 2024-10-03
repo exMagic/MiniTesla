@@ -18,7 +18,6 @@ unsigned long StartTime = millis();
 
 AS5600_PsW Sensor;
 
-
 // Set the size of the arrays (increase for more channels)
 #define RC_NUM_CHANNELS 2
 
@@ -29,7 +28,6 @@ AS5600_PsW Sensor;
 // Set up our channel pins - these are the pins that we connect to the receiver
 #define RC_CH1_INPUT 3 // receiver pin 1
 #define RC_CH2_INPUT 2 // receiver pin 2
-
 
 // Set up some arrays to store our pulse starts and widths
 uint16_t RC_VALUES[RC_NUM_CHANNELS];
@@ -98,56 +96,44 @@ typedef struct
 SerialFeedback Feedback2;
 SerialFeedback NewFeedback2;
 
-
-
 // PID constants
-const float Kp = 0.05;
-const float Ki = 0.0005;
-const float Kd = 0.05;
+const float Kp = 0.2;
+const float Ki = 0.01;
+const float Kd = 0.4;
+
+int targetAngle = 0;
+int currentAngle = 0;
+float error = 0;
+float output = 0;
+float maxOutput = 35;
 
 // PID variables
 float previousError = 0;
 float integral = 0;
 
 // Function to map Steer to target raw angle
-int mapSteerToAngle(int steer) {
-    // Map Steer from range [-99, 999] to raw angle range [3606, 3795]
-    return map(steer, 99, -99, 630, 2700);
+int mapSteerToAngle(int steer)
+{
+  // Map Steer from range [-99, 999] to raw angle range [3606, 3795]
+  return map(steer, -99, 99, 1666, 2000);
 }
 
 // PID control function
-void controlMotor(int steer) {
-    int targetAngle = mapSteerToAngle(steer);
-    int currentAngle = Sensor.rawAngle();
-    float error = targetAngle - currentAngle;
+void controlMotor(int steer)
+{
+  targetAngle = mapSteerToAngle(steer);
+  currentAngle = Sensor.rawAngle();
+  error = targetAngle - currentAngle;
 
-    integral += error;
-    float derivative = error - previousError;
-    float output = Kp * error + Ki * integral + Kd * derivative;
-    output = output * -1;
-    Serial.print(steer);
-    Serial.print(",");
-    Serial.print(targetAngle);
-    Serial.print(", ");
-    Serial.print(currentAngle);
-    Serial.print(", ");
-    Serial.print(error);
-    Serial.print(", ");
-    Serial.println(output);
-
-    Send(output, 0); // Add other parameters as needed
-    
-    previousError = error;
+  integral += error;
+  float derivative = error - previousError;
+  float _output = Kp * error + Ki * integral + Kd * derivative;
+  _output = _output * -1;
+  output = constrain(_output, -maxOutput, maxOutput);
+  //output = _output;
+  Send(output, 0); // Add other parameters as needed
+  previousError = error;
 }
-
-
-
-
-
-
-
-
-
 
 // ########################## SETUP ##########################
 void setup()
@@ -181,7 +167,6 @@ void setup()
   attachInterrupt(digitalPinToInterrupt(RC_CH1_INPUT), READ_RC1, CHANGE);
   attachInterrupt(digitalPinToInterrupt(RC_CH2_INPUT), READ_RC2, CHANGE);
 
-
   Sensor.init();
 }
 
@@ -195,7 +180,7 @@ void Send(int16_t uSteer, int16_t uSpeed)
   Command.checksum = (uint16_t)(Command.start ^ Command.steer ^ Command.speed);
 
   // Write to Serial
-  Serial2.write((uint8_t *)&Command, sizeof(Command));
+  //Serial2.write((uint8_t *)&Command, sizeof(Command));
 
   // Create command
   Command.start = (uint16_t)START_FRAME;
@@ -215,11 +200,11 @@ void Receive()
     bufStartFrame = ((uint16_t)(incomingByte) << 8) | incomingBytePrev; // Construct the start frame
   }
 
-  if (Serial2.available())
-  {
-    incomingByte2 = Serial2.read();                                        // Read the incoming byte
-    bufStartFrame2 = ((uint16_t)(incomingByte2) << 8) | incomingBytePrev2; // Construct the start frame
-  }
+  // if (Serial2.available())
+  // {
+  //   incomingByte2 = Serial2.read();                                        // Read the incoming byte
+  //   bufStartFrame2 = ((uint16_t)(incomingByte2) << 8) | incomingBytePrev2; // Construct the start frame
+  // }
 
 // If DEBUG_RX is defined print all incoming bytes
 #ifdef DEBUG_RX
@@ -241,19 +226,19 @@ void Receive()
     idx++;
   }
 
-  // Copy received data
-  if (bufStartFrame2 == START_FRAME2)
-  { // Initialize if new data is detected
-    p2 = (byte *)&NewFeedback2;
-    *p2++ = incomingBytePrev2;
-    *p2++ = incomingByte2;
-    idx2 = 2;
-  }
-  else if (idx2 >= 2 && idx2 < sizeof(SerialFeedback2))
-  { // Save the new received data
-    *p2++ = incomingByte2;
-    idx2++;
-  }
+  // // Copy received data
+  // if (bufStartFrame2 == START_FRAME2)
+  // { // Initialize if new data is detected
+  //   p2 = (byte *)&NewFeedback2;
+  //   *p2++ = incomingBytePrev2;
+  //   *p2++ = incomingByte2;
+  //   idx2 = 2;
+  // }
+  // else if (idx2 >= 2 && idx2 < sizeof(SerialFeedback2))
+  // { // Save the new received data
+  //   *p2++ = incomingByte2;
+  //   idx2++;
+  // }
 
   // Check if we reached the end of the package
   if (idx == sizeof(SerialFeedback))
@@ -266,24 +251,6 @@ void Receive()
     {
       // Copy the new data
       memcpy(&Feedback, &NewFeedback, sizeof(SerialFeedback));
-
-      // Print data to built-in Serial
-      // Serial.print("cmd1: ");
-      // Serial.print(Feedback.cmd1);
-      // Serial.print(" cmd2: ");
-      // Serial.print(Feedback.cmd2);
-      // Serial.print(" speedR: ");
-      // Serial.print(Feedback.speedR_meas);
-      // Serial.print(" speedL: ");
-      // Serial.print(Feedback.speedL_meas);
-      // // Serial.print(" batVoltage: ");
-      // // Serial.print(Feedback.batVoltage);
-      // // Serial.print(" boardTemp: ");
-      // // Serial.println(Feedback.boardTemp);
-      // // Serial.print(" 7: ");
-      // // Serial.println(Feedback.cmdLed);
-      // Serial.println();
-
       speedR = Feedback.speedR_meas;
       speedL = Feedback.speedL_meas;
       bat = Feedback.batVoltage;
@@ -298,48 +265,30 @@ void Receive()
   // Update previous states
   incomingBytePrev = incomingByte;
 
-  // Check if we reached the end of the package
-  if (idx2 == sizeof(SerialFeedback2))
-  {
-    uint16_t checksum2;
-    checksum2 = (uint16_t)(NewFeedback2.start ^ NewFeedback2.cmd1 ^ NewFeedback2.cmd2 ^ NewFeedback2.speedR_meas ^ NewFeedback2.speedL_meas ^ NewFeedback2.batVoltage ^ NewFeedback2.boardTemp ^ NewFeedback2.cmdLed);
+  // // Check if we reached the end of the package
+  // if (idx2 == sizeof(SerialFeedback2))
+  // {
+  //   uint16_t checksum2;
+  //   checksum2 = (uint16_t)(NewFeedback2.start ^ NewFeedback2.cmd1 ^ NewFeedback2.cmd2 ^ NewFeedback2.speedR_meas ^ NewFeedback2.speedL_meas ^ NewFeedback2.batVoltage ^ NewFeedback2.boardTemp ^ NewFeedback2.cmdLed);
 
-    // Check validity of the new data
-    if (NewFeedback2.start == START_FRAME2 && checksum2 == NewFeedback2.checksum)
-    {
-      // Copy the new data
-      memcpy(&Feedback2, &NewFeedback2, sizeof(SerialFeedback2));
+  //   // Check validity of the new data
+  //   if (NewFeedback2.start == START_FRAME2 && checksum2 == NewFeedback2.checksum)
+  //   {
+  //     // Copy the new data
+  //     memcpy(&Feedback2, &NewFeedback2, sizeof(SerialFeedback2));
+  //     speedR2 = Feedback2.speedR_meas;
+  //     speedL2 = Feedback2.speedL_meas;
+  //     bat2 = Feedback2.batVoltage;
+  //   }
+  //   else
+  //   {
+  //     // Serial.println("                                           xx Non-valid data skipped");
+  //   }
+  //   idx2 = 0; // Reset the index (it prevents to enter in this if condition in the next cycle)
+  // }
 
-      // Print data to built-in Serial
-      // Serial.print("cmd1: ");
-      // Serial.print(Feedback.cmd1);
-      // Serial.print(" cmd2: ");
-      // Serial.print(Feedback.cmd2);
-      // Serial.print("                                            speedR: ");
-      // Serial.print(Feedback2.speedR_meas);
-      // Serial.print(" speedL: ");
-      // Serial.print(Feedback2.speedL_meas);
-      // // Serial.print(" batVoltage: ");
-      // // Serial.print(Feedback.batVoltage);
-      // // Serial.print(" boardTemp: ");
-      // // Serial.println(Feedback.boardTemp);
-      // // Serial.print(" 7: ");
-      // // Serial.println(Feedback.cmdLed);
-      // Serial.println();
-
-      speedR2 = Feedback2.speedR_meas;
-      speedL2 = Feedback2.speedL_meas;
-      bat2 = Feedback2.batVoltage;
-    }
-    else
-    {
-      // Serial.println("                                           xx Non-valid data skipped");
-    }
-    idx = 0; // Reset the index (it prevents to enter in this if condition in the next cycle)
-  }
-
-  // Update previous states
-  incomingBytePrev2 = incomingByte2;
+  // // Update previous states
+  // incomingBytePrev2 = incomingByte2;
 }
 
 // ########################## LOOP ##########################
@@ -348,7 +297,7 @@ unsigned long iTimeSend = 0;
 int iTest = 0;
 int iStep = SPEED_STEP;
 
-void draw(void)
+void draw2(void)
 {
   // graphic commands to redraw the complete screen should be placed here
   u8g.setFont(u8g_font_unifont);
@@ -366,8 +315,49 @@ void draw(void)
   u8g.setPrintPos(60, 30);
   u8g.print(bat2);
 
-    u8g.setPrintPos(60, 60);
+  u8g.setPrintPos(60, 60);
   u8g.print(Sensor.rawAngle());
+}
+
+void draw(void)
+{
+  int row = 10;
+  u8g.setFont(u8g_font_6x10);
+
+  // u8g.setPrintPos(0, 10);
+  // u8g.print("Steer:");
+  // u8g.setPrintPos(50, 10);
+  // u8g.print(Steer);
+
+  u8g.setPrintPos(0, row * 2);
+  u8g.print("cAng:");
+  u8g.setPrintPos(50, row * 2);
+  u8g.print(currentAngle);
+
+  //   u8g.setPrintPos(0, row * 2);
+  // u8g.print("rAng:");
+  // u8g.setPrintPos(80, row * 2);
+  // u8g.print(Sensor.rawAngle());
+
+
+  // u8g.setPrintPos(0, row * 3);
+  // u8g.print("tAng:");
+  // u8g.setPrintPos(50, row * 3);
+  // u8g.print(targetAngle);
+
+  u8g.setPrintPos(0, row * 4);
+  u8g.print("er:");
+  u8g.setPrintPos(50, row * 4);
+  u8g.print(error);
+
+  u8g.setPrintPos(0, row * 5);
+  u8g.print("out:");
+  u8g.setPrintPos(50, row * 5);
+  u8g.print(output);
+
+
+  // u8g.setPrintPos(60, 60);
+  // u8g.print(Sensor.rawAngle());
 }
 
 // Thee functions are called by the interrupts. We send them all to the same place to measure the pulse width
@@ -404,40 +394,33 @@ void rc_read_values()
 
 void loop(void)
 {
-  unsigned long timeNow = millis();
+  //unsigned long timeNow = millis();
 
   // Check for new received data
   Receive();
 
   // Send commands
-  if (iTimeSend > timeNow)
-    return;
-  iTimeSend = timeNow + TIME_SEND;
-  if (timeNow - StartTime > 15000)
-  {
-    iTest = 0;
-  }
-  
+  // if (iTimeSend > timeNow)
+  //   return;
+  // iTimeSend = timeNow + TIME_SEND;
+  // if (timeNow - StartTime > 15000)
+  // {
+  //   iTest = 0;
+  // }
 
-  // Calculate test command signal
-  iTest += iStep;
-  if (iTest >= SPEED_MAX_TEST)
-  {
-    iTest = SPEED_MAX_TEST;
-  }
+  // // Calculate test command signal
+  // iTest += iStep;
+  // if (iTest >= SPEED_MAX_TEST)
+  // {
+  //   iTest = SPEED_MAX_TEST;
+  // }
 
   // // invert step if reaching limit
   // if (iTest >= SPEED_MAX_TEST || iTest <= -SPEED_MAX_TEST)
   //   iStep = -iStep;
 
   // Blink the LED
-  digitalWrite(LED_BUILTIN, (timeNow % 2000) < 1000);
-
-  u8g.firstPage();
-  do
-  {
-    draw();
-  } while (u8g.nextPage());
+  //digitalWrite(LED_BUILTIN, (timeNow % 2000) < 1000);
 
   rc_read_values();
 
@@ -453,9 +436,16 @@ void loop(void)
   // Serial.print("  st ");
   // Serial.println(Steer);
 
-  //int Steer = ...; // Get the Steer value from the joystick
+  // int Steer = ...; // Get the Steer value from the joystick
   controlMotor(Steer);
-  //Send(Steer, Throttle);
+  
+  u8g.firstPage();
+  do
+  {
+    draw();
+  } while (u8g.nextPage());
+
+  // Send(Steer, Throttle);
 }
 
 // ########################## END ##########################

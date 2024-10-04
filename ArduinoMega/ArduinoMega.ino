@@ -97,9 +97,9 @@ SerialFeedback Feedback2;
 SerialFeedback NewFeedback2;
 
 // PID constants
-const float Kp = 0.2;
-const float Ki = 0.01;
-const float Kd = 0.4;
+const float Kp = 0.08;
+const float Ki = 0.00001;
+const float Kd = 0.02;
 
 int targetAngle = 0;
 int currentAngle = 0;
@@ -115,7 +115,7 @@ float integral = 0;
 int mapSteerToAngle(int steer)
 {
   // Map Steer from range [-99, 999] to raw angle range [3606, 3795]
-  return map(steer, -99, 99, 1666, 2000);
+  return map(steer, -99, 99, 1160, 2070);
 }
 
 // PID control function
@@ -180,14 +180,20 @@ void Send(int16_t uSteer, int16_t uSpeed)
   Command.checksum = (uint16_t)(Command.start ^ Command.steer ^ Command.speed);
 
   // Write to Serial
-  //Serial2.write((uint8_t *)&Command, sizeof(Command));
+  if (Serial2.available())
+  {
+    Serial2.write((uint8_t *)&Command, sizeof(Command));
+  }
 
   // Create command
   Command.start = (uint16_t)START_FRAME;
   Command.steer = (int16_t)uSteer;
   Command.speed = 0;
   Command.checksum = (uint16_t)(Command.start ^ Command.steer ^ Command.speed);
-  Serial1.write((uint8_t *)&Command, sizeof(Command));
+  if (Serial1.available())
+  {
+    Serial1.write((uint8_t *)&Command, sizeof(Command));
+  }
 }
 
 // ########################## RECEIVE ##########################
@@ -200,11 +206,11 @@ void Receive()
     bufStartFrame = ((uint16_t)(incomingByte) << 8) | incomingBytePrev; // Construct the start frame
   }
 
-  // if (Serial2.available())
-  // {
-  //   incomingByte2 = Serial2.read();                                        // Read the incoming byte
-  //   bufStartFrame2 = ((uint16_t)(incomingByte2) << 8) | incomingBytePrev2; // Construct the start frame
-  // }
+  if (Serial2.available())
+  {
+    incomingByte2 = Serial2.read();                                        // Read the incoming byte
+    bufStartFrame2 = ((uint16_t)(incomingByte2) << 8) | incomingBytePrev2; // Construct the start frame
+  }
 
 // If DEBUG_RX is defined print all incoming bytes
 #ifdef DEBUG_RX
@@ -226,19 +232,19 @@ void Receive()
     idx++;
   }
 
-  // // Copy received data
-  // if (bufStartFrame2 == START_FRAME2)
-  // { // Initialize if new data is detected
-  //   p2 = (byte *)&NewFeedback2;
-  //   *p2++ = incomingBytePrev2;
-  //   *p2++ = incomingByte2;
-  //   idx2 = 2;
-  // }
-  // else if (idx2 >= 2 && idx2 < sizeof(SerialFeedback2))
-  // { // Save the new received data
-  //   *p2++ = incomingByte2;
-  //   idx2++;
-  // }
+  // Copy received data
+  if (bufStartFrame2 == START_FRAME2)
+  { // Initialize if new data is detected
+    p2 = (byte *)&NewFeedback2;
+    *p2++ = incomingBytePrev2;
+    *p2++ = incomingByte2;
+    idx2 = 2;
+  }
+  else if (idx2 >= 2 && idx2 < sizeof(SerialFeedback2))
+  { // Save the new received data
+    *p2++ = incomingByte2;
+    idx2++;
+  }
 
   // Check if we reached the end of the package
   if (idx == sizeof(SerialFeedback))
@@ -265,30 +271,30 @@ void Receive()
   // Update previous states
   incomingBytePrev = incomingByte;
 
-  // // Check if we reached the end of the package
-  // if (idx2 == sizeof(SerialFeedback2))
-  // {
-  //   uint16_t checksum2;
-  //   checksum2 = (uint16_t)(NewFeedback2.start ^ NewFeedback2.cmd1 ^ NewFeedback2.cmd2 ^ NewFeedback2.speedR_meas ^ NewFeedback2.speedL_meas ^ NewFeedback2.batVoltage ^ NewFeedback2.boardTemp ^ NewFeedback2.cmdLed);
+  // Check if we reached the end of the package
+  if (idx2 == sizeof(SerialFeedback2))
+  {
+    uint16_t checksum2;
+    checksum2 = (uint16_t)(NewFeedback2.start ^ NewFeedback2.cmd1 ^ NewFeedback2.cmd2 ^ NewFeedback2.speedR_meas ^ NewFeedback2.speedL_meas ^ NewFeedback2.batVoltage ^ NewFeedback2.boardTemp ^ NewFeedback2.cmdLed);
 
-  //   // Check validity of the new data
-  //   if (NewFeedback2.start == START_FRAME2 && checksum2 == NewFeedback2.checksum)
-  //   {
-  //     // Copy the new data
-  //     memcpy(&Feedback2, &NewFeedback2, sizeof(SerialFeedback2));
-  //     speedR2 = Feedback2.speedR_meas;
-  //     speedL2 = Feedback2.speedL_meas;
-  //     bat2 = Feedback2.batVoltage;
-  //   }
-  //   else
-  //   {
-  //     // Serial.println("                                           xx Non-valid data skipped");
-  //   }
-  //   idx2 = 0; // Reset the index (it prevents to enter in this if condition in the next cycle)
-  // }
+    // Check validity of the new data
+    if (NewFeedback2.start == START_FRAME2 && checksum2 == NewFeedback2.checksum)
+    {
+      // Copy the new data
+      memcpy(&Feedback2, &NewFeedback2, sizeof(SerialFeedback2));
+      speedR2 = Feedback2.speedR_meas;
+      speedL2 = Feedback2.speedL_meas;
+      bat2 = Feedback2.batVoltage;
+    }
+    else
+    {
+      // Serial.println("                                           xx Non-valid data skipped");
+    }
+    idx2 = 0; // Reset the index (it prevents to enter in this if condition in the next cycle)
+  }
 
-  // // Update previous states
-  // incomingBytePrev2 = incomingByte2;
+  // Update previous states
+  incomingBytePrev2 = incomingByte2;
 }
 
 // ########################## LOOP ##########################
@@ -438,7 +444,7 @@ void loop(void)
 
   // int Steer = ...; // Get the Steer value from the joystick
   controlMotor(Steer);
-  
+
   u8g.firstPage();
   do
   {

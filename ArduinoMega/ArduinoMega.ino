@@ -34,6 +34,10 @@ uint16_t RC_VALUES[RC_NUM_CHANNELS];
 uint32_t RC_START[RC_NUM_CHANNELS];
 volatile uint16_t RC_SHARED[RC_NUM_CHANNELS];
 
+// Define the dead zone range
+const int DEAD_ZONE_MIN = -10; // Adjust these values as needed
+const int DEAD_ZONE_MAX = 10;
+
 int speedR;
 int speedL;
 int speedR2;
@@ -131,7 +135,7 @@ void controlMotor(int steer)
   _output = _output * -1;
   output = constrain(_output, -maxOutput, maxOutput);
   //output = _output;
-  Send(output, 0); // Add other parameters as needed
+  SendFront(output, 0); // Add other parameters as needed
   previousError = error;
 }
 
@@ -171,7 +175,32 @@ void setup()
 }
 
 // ########################## SEND ##########################
-void Send(int16_t uSteer, int16_t uSpeed)
+void SendFront(int16_t uSteer, int16_t uSpeed)
+{
+  // // Create command
+  // Command.start = (uint16_t)START_FRAME;
+  // Command.steer = 0;
+  // Command.speed = (int16_t)uSpeed;
+  // Command.checksum = (uint16_t)(Command.start ^ Command.steer ^ Command.speed);
+
+  // // Write to Serial
+  // if (Serial2.available())
+  // {
+  //   Serial2.write((uint8_t *)&Command, sizeof(Command));
+  // }
+
+  // Create command
+  Command.start = (uint16_t)START_FRAME;
+  Command.steer = (int16_t)uSteer;
+  Command.speed = 0;
+  Command.checksum = (uint16_t)(Command.start ^ Command.steer ^ Command.speed);
+  if (Serial1.available())
+  {
+    Serial1.write((uint8_t *)&Command, sizeof(Command));
+  }
+}
+
+void SendRear(int16_t uSteer, int16_t uSpeed)
 {
   // Create command
   Command.start = (uint16_t)START_FRAME;
@@ -185,15 +214,15 @@ void Send(int16_t uSteer, int16_t uSpeed)
     Serial2.write((uint8_t *)&Command, sizeof(Command));
   }
 
-  // Create command
-  Command.start = (uint16_t)START_FRAME;
-  Command.steer = (int16_t)uSteer;
-  Command.speed = 0;
-  Command.checksum = (uint16_t)(Command.start ^ Command.steer ^ Command.speed);
-  if (Serial1.available())
-  {
-    Serial1.write((uint8_t *)&Command, sizeof(Command));
-  }
+  // // Create command
+  // Command.start = (uint16_t)START_FRAME;
+  // Command.steer = (int16_t)uSteer;
+  // Command.speed = 0;
+  // Command.checksum = (uint16_t)(Command.start ^ Command.steer ^ Command.speed);
+  // if (Serial1.available())
+  // {
+  //   Serial1.write((uint8_t *)&Command, sizeof(Command));
+  // }
 }
 
 // ########################## RECEIVE ##########################
@@ -430,9 +459,13 @@ void loop(void)
 
   rc_read_values();
 
-  // map(value, fromLow, fromHigh, toLow, toHigh)
-  Throttle = map(RC_VALUES[0], 1478, 2086, 0, 100);
+  Throttle = map(RC_VALUES[0], 1478, 2086, 0, 300);
   Steer = map(RC_VALUES[1], 1124, 1892, -100, 100);
+
+  // Apply dead zone to Throttle
+  if (Throttle > DEAD_ZONE_MIN && Throttle < DEAD_ZONE_MAX) {
+    Throttle = 0;
+  }
 
   // Serial.print(RC_VALUES[0]);
   // Serial.print(",");
@@ -444,6 +477,7 @@ void loop(void)
 
   // int Steer = ...; // Get the Steer value from the joystick
   controlMotor(Steer);
+  SendRear(Steer, Throttle);
 
   u8g.firstPage();
   do

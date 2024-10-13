@@ -1,7 +1,7 @@
 #define HOVER_SERIAL_BAUD 115200  // [-] Baud rate for HoverSerial (used to communicate with the hoverboard)
 #define SERIAL_BAUD 115200        // [-] Baud rate for built-in Serial (used for the Serial Monitor)
 #define START_FRAME 0xABCD        // [-] Start frme definition for reliable serial communication
-#define TIME_SEND 100              // [ms] Sending time interval
+#define TIME_SEND 4              // [ms] Sending time interval
 #define SPEED_MAX_TEST 50        // [-] Maximum speed for testing
 #define SPEED_STEP 1              // [-] Speed step
 // #define DEBUG_RX                        // [-] Debug received data. Prints all bytes to serial (comment-out to disable)
@@ -157,7 +157,8 @@ unsigned long timeNow = millis();
 
   // Check for new received data
   Receive();
-
+  // delay(50);
+  // SendFront(30, 0);
   // Send commands
   if (iTimeSend > timeNow) return;
   iTimeSend = timeNow + TIME_SEND;
